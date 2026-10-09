@@ -168,8 +168,7 @@ def pff_to_sb(x, y, direction, length=105.0, width=68.0):
 def read_tracking_frames(gid, frame_nums=None, smoothed=False):
     """
     Stream a tracking file and return {frameNum: frame dict}. If frame_nums
-    is given, only those frames are kept (the file is still read in full,
-    about 1 to 2 minutes per game). smoothed=True swaps in the Kalman
+    is given, only those frames are kept (the file is still read in full). smoothed=True swaps in the Kalman
     smoothed player positions.
     """
     keep = None if frame_nums is None else set(int(f) for f in frame_nums)
@@ -468,7 +467,7 @@ def _players_array(lst):
 def extract_frames(gid, frame_nums):
     """
     Read only the wanted frames from a tracking file. Lines are skipped by
-    their frame number before any JSON parsing, so a game takes about 20 s.
+    their frame number before any JSON parsing.
     Returns {frameNum: {'home', 'away', 'home_s', 'away_s', 'ball'}} where the
     player entries are arrays from _players_array (raw and Kalman smoothed)
     and 'ball' is (x, y) or None.
@@ -577,3 +576,92 @@ def check_pass(start, target, ball_time, opp_pos, opp_vel, receiver_pos=None, re
         out['receiver_time'] = tr
         out['arrives'] = bool(out['path_margin'] > 0 and tr < out['defender_time_at_target'])
     return out
+
+
+# ---------------------------------------------------------------- whole-match arrays (RQ3 with PFF)
+def extract_match_arrays(gid, step=3):
+    """
+    Read a whole tracking file at 30 / step frames per second (step = 3 gives
+    10 Hz) into compact arrays, identifying players through the roster.
+
+    Returns a dict:
+      frame     (T,) int     frameNum of each kept frame (multiples of step)
+      period    (T,) int8
+      player_id (P,) int     every PFF player seen in the file
+      home      (P,) bool    True for the home team
+      xy        (T, P, 2) float32, raw tracked positions in PFF metres, NaN when absent
+      vis       (T, P) int8  1 VISIBLE, 0 ESTIMATED, -1 absent
+      ball      (T, 3) float32 (x, y, z), NaN when missing
+    """
+    meta = json.load(open(metadata_path(gid), encoding='utf-8'))[0]
+    home_name = meta['homeTeam']['name']
+    ro = load_roster(gid)
+    pid_of = {(r.team == home_name, r.jersey): r.pff_player_id for r in ro.itertuples()}
+    frames, periods, rows, balls = [], [], [], []
+    with bz2.open(tracking_path(gid), 'rt') as fh:
+        for line in fh:
+            m = _FRAME_RX.search(line, 0, 400)
+            if not m or int(m.group(1)) % step:
+                continue
+            d = json.loads(line)
+            frames.append(d['frameNum'])
+            periods.append(d.get('period') or 0)
+            entry = {}
+            for is_home, key in ((True, 'homePlayers'), (False, 'awayPlayers')):
+                for p in d.get(key) or []:
+                    pid = pid_of.get((is_home, int(p['jerseyNum'])))
+                    if pid is not None and pid not in entry:
+                        entry[pid] = (p['x'], p['y'], 1 if p.get('visibility') == 'VISIBLE' else 0, is_home)
+            rows.append(entry)
+            b = (d.get('balls') or [None])[0]
+            balls.append((b['x'], b['y'], b.get('z') or 0.0) if b else (np.nan, np.nan, np.nan))
+    ids = sorted({pid for e in rows for pid in e})
+    col = {pid: i for i, pid in enumerate(ids)}
+    home = np.zeros(len(ids), dtype=bool)
+    xy = np.full((len(rows), len(ids), 2), np.nan, dtype=np.float32)
+    vis = np.full((len(rows), len(ids)), -1, dtype=np.int8)
+    for t, e in enumerate(rows):
+        for pid, (x, y, v, h) in e.items():
+            j = col[pid]
+            xy[t, j] = (x, y)
+            vis[t, j] = v
+            home[j] = h
+    return {'frame': np.array(frames, dtype=np.int64), 'period': np.array(periods, dtype=np.int8),
+            'player_id': np.array(ids, dtype=np.int64), 'home': home, 'xy': xy, 'vis': vis,
+            'ball': np.array(balls, dtype=np.float32)}
+
+
+def headings(xy, frame=None, step=3, lag=5, min_speed=1.0, dt=0.1, hold=20):
+    """
+    Movement direction of every player at every 10 Hz sample, used as the
+    facing direction for the vision cone (the same idea as the StatsBomb
+    version, which uses the movement into the pass).
+
+    xy: (T, P, 2); frame: (T,) frame numbers, used to skip gaps. Heading at t
+    is the direction from t - lag to t (0.5 s at 10 Hz). If the player moves slower than min_speed m/s, the last valid
+    heading from up to `hold` samples (2 s) earlier is kept; otherwise NaN.
+    Returns unit vectors (T, P, 2) and speeds (T, P).
+    """
+    T = xy.shape[0]
+    d = np.full_like(xy, np.nan)
+    d[lag:] = xy[lag:] - xy[:-lag]
+    if frame is not None:
+        # no heading across a gap in the tracking (replays, stoppages, half time)
+        gap = np.ones(T, dtype=bool)
+        gap[lag:] = (frame[lag:] - frame[:-lag]) != lag * step
+        d[gap] = np.nan
+    speed = np.hypot(d[..., 0], d[..., 1]) / (lag * dt)
+    unit = d / np.maximum(np.hypot(d[..., 0], d[..., 1]), 1e-9)[..., None]
+    ok = speed >= min_speed
+    head = np.where(ok[..., None], unit, np.nan)
+    last = np.full(xy.shape[1:], np.nan, dtype=xy.dtype)
+    age = np.full(xy.shape[1], 10 ** 6)
+    out = np.full_like(xy, np.nan)
+    for t in range(T):
+        good = ok[t]
+        last[good] = head[t, good]
+        age[good] = 0
+        age[~good] += 1
+        keep = age <= hold
+        out[t, keep] = last[keep]
+    return out, speed

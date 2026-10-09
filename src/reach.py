@@ -1,5 +1,5 @@
 """
-Pass reachability from PFF tracking (supervisor point 1b).
+Pass reachability from PFF tracking.
 
 For each linked World Cup pass, the PFF tracking frame at the moment of the
 pass gives every player's position and velocity. A ground pass from the
