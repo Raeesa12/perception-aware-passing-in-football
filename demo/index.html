@@ -1,0 +1,919 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}</style>
+</head>
+<body>
+<title>Counterfactual Passes</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a match-analysis bench. Pass picker on the left, the pitch in the middle,
+   the options and the what-if result underneath. One column on phones. */
+:root {
+  --bg: #F2F4F8;
+  --panel: #FFFFFF;
+  --fg: #141A2B;
+  --muted: #5A6377;
+  --line: #DCE0E8;
+  --chip: #EBEEF4;
+  --pitch: #E3E9E4;
+  --pitch-line: #FFFFFF;
+  --area: #EEF3EF;
+  --team: #2457D6;
+  --team-ink: #FFFFFF;
+  --opp: #6B7280;
+  --opp-ink: #FFFFFF;
+  --good: #15803D;
+  --good-soft: #DCF3E3;
+  --risky: #7C3AED;
+  --risky-soft: #EEE6FD;
+  --worse: #9CA3AF;
+  --memory: #0F9A8E;
+  --cone: rgba(36, 87, 214, 0.11);
+  --ball: #FFFFFF;
+  --cut: #B42318;
+  --font-display: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+  --font-body: "Barlow", "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F131C; --panel: #161B27; --fg: #E8EAF1; --muted: #9AA2B5; --line: #283044; --chip: #1F2636;
+    --pitch: #18221E; --pitch-line: #34443C; --area: #1E2A25;
+    --team: #6F9BFF; --team-ink: #0F131C; --opp: #7D8596; --opp-ink: #0F131C;
+    --good: #4ADE80; --good-soft: #163524; --risky: #B59AFF; --risky-soft: #2A2145; --worse: #6B7280;
+    --memory: #2DD4BF; --cone: rgba(111, 155, 255, 0.14); --ball: #FFFFFF; --cut: #F87171;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F131C; --panel: #161B27; --fg: #E8EAF1; --muted: #9AA2B5; --line: #283044; --chip: #1F2636;
+  --pitch: #18221E; --pitch-line: #34443C; --area: #1E2A25;
+  --team: #6F9BFF; --team-ink: #0F131C; --opp: #7D8596; --opp-ink: #0F131C;
+  --good: #4ADE80; --good-soft: #163524; --risky: #B59AFF; --risky-soft: #2A2145; --worse: #6B7280;
+  --memory: #2DD4BF; --cone: rgba(111, 155, 255, 0.14); --ball: #FFFFFF; --cut: #F87171;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.45; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 18px 32px; max-width: 1480px; margin: 0 auto; display: grid; gap: 16px; }
+header.hero { position: relative; display: grid; gap: 6px; padding-block: 44px 10px; overflow: hidden; }
+.hero .trail { position: absolute; left: 0; top: 0; width: calc(100% - 44px); height: 40px; opacity: 0.6; pointer-events: none; }
+.hero .heroball { position: absolute; right: 2px; top: 0; width: 36px; height: 36px; animation: spin 14s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .hero .heroball { animation: none; } }
+h1 { position: relative; font-family: var(--font-display); font-weight: 700; font-size: 36px; letter-spacing: 0.01em; margin: 0; line-height: 1.1; text-wrap: balance; }
+h1 .titleball { width: 28px; height: 28px; vertical-align: -3px; margin-right: 10px; }
+h1 .alt { color: var(--team); }
+.pun { position: relative; margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 19px; color: var(--good); letter-spacing: 0.01em; }
+.sub { position: relative; color: var(--muted); font-size: 15px; margin: 0; max-width: none; }
+.grid { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 920px) { .grid { grid-template-columns: minmax(0, 1fr); } .list { max-height: 280px !important; } }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.rail { display: grid; gap: 16px; padding: 14px; min-width: 0; }
+.label { font-family: var(--font-display); font-weight: 600; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; display: block; }
+.featured { display: grid; gap: 6px; }
+.feat { text-align: left; border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 8px; padding: 8px 10px; cursor: pointer; font: inherit; display: grid; gap: 1px; }
+.feat:hover { border-color: var(--team); }
+.feat[aria-current="true"] { border-color: var(--team); box-shadow: inset 3px 0 0 var(--team); }
+.feat b { font-family: var(--font-display); font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 6px; }
+.feat b svg { width: 14px; height: 14px; flex: none; }
+.feat .where { font-family: var(--font-data); font-size: 11px; color: var(--team); }
+.feat span { font-size: 13px; color: var(--muted); }
+select, input[type="search"] { width: 100%; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+select:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--team); outline-offset: 2px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--chip); color: var(--fg); border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 13px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--team); color: var(--team-ink); border-color: var(--team); }
+.list { position: relative; max-height: 460px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.row { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 8px; padding: 7px 10px; border: 0; border-bottom: 1px solid var(--line); cursor: pointer; width: 100%; text-align: left; background: none; color: var(--fg); font: inherit; font-size: 13.5px; }
+.row:hover { background: var(--chip); }
+.row[aria-current="true"] { background: var(--chip); box-shadow: inset 3px 0 0 var(--team); }
+.row .clk { font-family: var(--font-data); font-size: 12px; color: var(--muted); padding-top: 1px; }
+.row .who { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dots { display: flex; gap: 5px; margin-top: 3px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.count { font-size: 12.5px; color: var(--muted); margin: 0 0 6px; }
+main { display: grid; gap: 16px; min-width: 0; }
+.stage { padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.passhead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; align-items: flex-start; }
+.passhead h2 { font-family: var(--font-display); font-weight: 600; font-size: 24px; margin: 0; text-wrap: balance; }
+.meta { color: var(--muted); font-size: 13.5px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { font: inherit; font-size: 13px; padding: 5px 12px; border: 0; background: var(--panel); color: var(--fg); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--team); color: var(--team-ink); }
+.seg button:disabled { color: var(--worse); cursor: not-allowed; }
+.canvaswrap { position: relative; width: 100%; aspect-ratio: 113 / 76; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 8px; cursor: default; }
+.msg { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 14px; pointer-events: none; text-align: center; padding: 16px; }
+.controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.btn { font: inherit; font-size: 13.5px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+.btn.primary { background: var(--team); color: var(--team-ink); border-color: var(--team); min-width: 82px; }
+.btn.go { background: var(--good); color: #FFFFFF; border-color: var(--good); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.scrub { flex: 1 1 200px; min-width: 0; accent-color: var(--team); }
+.time { font-family: var(--font-data); font-size: 12.5px; color: var(--muted); min-width: 120px; font-variant-numeric: tabular-nums; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12.5px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 50%; display: inline-block; flex: none; }
+.ln { width: 20px; height: 0; border-top: 3px solid; display: inline-block; flex: none; }
+.panel { padding: 14px 16px; display: grid; gap: 12px; min-width: 0; }
+.panel h3 { font-family: var(--font-display); font-weight: 600; font-size: 20px; margin: 0; }
+.verdict { margin: 0; font-size: 15px; }
+.verdict b { font-weight: 600; }
+.whatif { border-radius: 10px; border: 1px solid var(--good); background: var(--good-soft); padding: 12px 14px; display: grid; gap: 10px; }
+.whatif.cut { border-color: var(--cut); background: var(--risky-soft); }
+.whatif h4 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 18px; }
+.whatif p { margin: 0; }
+.whatif p.note { font-size: 13px; color: var(--muted); }
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.metric { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 2px; }
+.metric .k { font-size: 12px; color: var(--muted); }
+.metric .v { font-family: var(--font-data); font-size: 15px; font-variant-numeric: tabular-nums; }
+.metric .v b { color: var(--good); font-weight: 500; }
+.metric .v i { color: var(--muted); font-style: normal; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; min-width: 640px; }
+th { text-align: left; font-family: var(--font-display); font-weight: 600; font-size: 12.5px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+td.num { font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+tr.played td { background: var(--chip); }
+tbody tr:hover td { background: var(--chip); }
+.sq { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 6px; vertical-align: middle; }
+.bar { display: flex; align-items: center; gap: 6px; min-width: 150px; }
+.bar .track { flex: 1; height: 8px; background: var(--chip); border-radius: 4px; position: relative; overflow: hidden; }
+.bar .fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+.bar .n { font-family: var(--font-data); font-size: 12.5px; width: 46px; text-align: right; font-variant-numeric: tabular-nums; }
+.yes { color: var(--good); font-weight: 600; }
+.no { color: var(--muted); }
+.tag { font-family: var(--font-data); font-size: 11px; padding: 1px 6px; border-radius: 4px; white-space: nowrap; border: 1px solid var(--line); color: var(--muted); margin-left: 4px; }
+.tag.exp { border-color: var(--risky); color: var(--risky); }
+.howto summary { cursor: pointer; font-family: var(--font-display); font-weight: 600; font-size: 16px; }
+.howto { padding: 12px 16px; }
+.howto ul { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 6px; color: var(--muted); font-size: 14px; }
+.howto b { color: var(--fg); font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<div class="wrap">
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <clipPath id="ballClip"><circle cx="32" cy="32" r="29"/></clipPath>
+      <symbol id="ball" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="29" fill="#FFFFFF"/>
+        <g clip-path="url(#ballClip)" fill="#151A2A" stroke="#151A2A" stroke-width="2.4" stroke-linejoin="round">
+          <polygon points="32,21 42.5,28.6 38.5,41 25.5,41 21.5,28.6"/>
+          <path d="M32 21V9M42.5 28.6L54 24.8M38.5 41L45.6 50.8M25.5 41L18.4 50.8M21.5 28.6L10 24.8" fill="none"/>
+          <polygon points="32,9 25,1 39,1"/><polygon points="54,24.8 58,16 64,27 59,34"/>
+          <polygon points="45.6,50.8 55,47 56,58 47,63"/><polygon points="18.4,50.8 17,63 8,58 9,47"/>
+          <polygon points="10,24.8 5,34 0,27 6,16"/>
+        </g>
+        <circle cx="32" cy="32" r="29" fill="none" stroke="#151A2A" stroke-width="2.6"/>
+      </symbol>
+    </defs>
+  </svg>
+  <header class="hero">
+    <svg class="trail" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M4 34 C 300 36, 640 4, 1000 12" fill="none" stroke="var(--good)" stroke-width="2.5" stroke-dasharray="9 8" vector-effect="non-scaling-stroke"/>
+    </svg>
+    <svg class="heroball" aria-hidden="true"><use href="#ball"/></svg>
+    <h1><svg class="titleball" aria-hidden="true"><use href="#ball"/></svg>Counterfactual Passes: <span class="alt">What Else Was On</span></h1>
+    <p class="pun">Hindsight is 20/20. The passer only had 120&deg;.</p>
+    <p class="sub">Pick a pass from a real international match. See which teammates the passer could see, which of them were better options, and play out what might have happened if the ball had gone there instead.</p>
+  </header>
+
+  <div class="grid">
+    <aside class="card rail" aria-label="Choose a pass">
+      <div>
+        <span class="label">Start with one of these</span>
+        <div class="featured" id="featured"></div>
+      </div>
+      <div>
+        <label class="label" for="match">Or pick a match</label>
+        <select id="match"></select>
+      </div>
+      <div>
+        <span class="label">Show</span>
+        <div class="chips" id="filters" role="group" aria-label="Filter passes">
+          <button class="chip" data-f="missed" aria-pressed="true">Missed a better option</button>
+          <button class="chip" data-f="blind" aria-pressed="false">Passed without looking</button>
+          <button class="chip" data-f="expert" aria-pressed="false">Expert pick</button>
+          <button class="chip" data-f="all" aria-pressed="false">All passes</button>
+        </div>
+      </div>
+      <div>
+        <label class="label" for="search">Player</label>
+        <input type="search" id="search" placeholder="Filter by player name">
+      </div>
+      <div>
+        <p class="count" id="count">Loading matches…</p>
+        <div class="list" id="list" role="list"></div>
+      </div>
+    </aside>
+
+    <main>
+      <section class="card stage" aria-label="Pitch">
+        <div class="passhead">
+          <div>
+            <h2 id="passTitle">Loading…</h2>
+            <div class="meta" id="passMeta"></div>
+          </div>
+          <div class="seg" role="group" aria-label="View">
+            <button id="vTrack" aria-pressed="true">Replay</button>
+            <button id="vFreeze" aria-pressed="false">Snapshot</button>
+          </div>
+        </div>
+        <div class="canvaswrap">
+          <canvas id="pitch" aria-label="Pitch view of the selected pass"></canvas>
+          <div class="msg" id="msg" hidden></div>
+        </div>
+        <div class="controls">
+          <button class="btn primary" id="play">Play</button>
+          <button class="btn" id="toPass">Back to the pass</button>
+          <button class="btn" id="restart">From the start</button>
+          <input class="scrub" type="range" id="scrub" min="0" max="1000" value="0" aria-label="Time around the pass">
+          <span class="time" id="time"></span>
+          <label class="toggle"><input type="checkbox" id="slow"> Slow motion</label>
+          <label class="toggle"><input type="checkbox" id="showAll"> Show every option</label>
+        </div>
+        <div class="legend" id="legend"></div>
+      </section>
+
+      <section class="card panel" aria-label="Options at the moment of the pass">
+        <h3>What else was on?</h3>
+        <p class="verdict" id="verdict"></p>
+        <div class="whatif" id="whatif" hidden></div>
+        <div class="tablewrap"><table id="table"></table></div>
+      </section>
+
+      <details class="card howto">
+        <summary>How to read this</summary>
+        <ul>
+          <li><b>The shaded wedge</b> is what the passer could see: 120 degrees around the direction he was moving.</li>
+          <li><b>Value</b> says how much a pass to each teammate would raise his team's chances of scoring (and lower their chances of conceding) over the next few actions, compared with the pass he actually played. It comes from a model trained on thousands of real actions (VAEP), shown here multiplied by 100.</li>
+          <li><b>Green</b> options were better, in view, onside and realistic to complete. <b>Purple</b> options were worth more but had a catch: out of view, offside, or a low chance of completing. <b>Grey</b> options were worth less than the pass played.</li>
+          <li><b>Teal ghosts</b> show where the passer last saw a teammate who was out of view at the moment of the pass, as his memory would place him.</li>
+          <li><b>Play this pass</b> sends the ball to that teammate at a typical pass speed while everyone else moves as they really did. A defender who could get to the ball first cuts it out. If it arrives, the receiver looks for the most dangerous pass he could make next. This is a simple projection, not a prediction of what would have happened.</li>
+          <li><b>Threat</b> is the chance that a team in possession at that spot scores within the next few actions (expected threat).</li>
+          <li>The 64 World Cup 2022 matches are replayed from player tracking. Euro 2020 and Euro 2024 passes show the snapshot camera view at the moment of the pass, so nobody moves during a what-if.</li>
+        </ul>
+      </details>
+    </main>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const PW = 105, PH = 68, PAD = 4;
+const HZ = 5, BEFORE = 5, AFTER = 8;
+const BALL = 12.5, REACT = 0.7, VMAX = 7;          // m/s, s, m/s: the same simple motion model as the arrival check
+const TOP_N = 3;
+// expected threat on a 12 x 8 grid (columns along the pitch toward goal, rows across), probability of scoring soon
+const XT = [[0.0067,0.0079,0.0086,0.0098,0.0112,0.0126,0.0147,0.0174,0.0212,0.0269,0.0333,0.0367],[0.0079,0.0089,0.0095,0.0106,0.0121,0.0138,0.016,0.0188,0.0235,0.0294,0.0394,0.047],[0.009,0.0098,0.0101,0.0111,0.0126,0.0144,0.0167,0.0194,0.0238,0.0318,0.0574,0.0935],[0.0093,0.0105,0.0104,0.0113,0.0127,0.0147,0.0169,0.0199,0.0243,0.0396,0.0985,0.2019],[0.0093,0.0105,0.0103,0.0113,0.0127,0.0147,0.0169,0.0198,0.0243,0.0391,0.0961,0.1952],[0.0089,0.0097,0.01,0.0111,0.0126,0.0143,0.0166,0.0194,0.0238,0.0313,0.0534,0.0793],[0.0077,0.0088,0.0095,0.0106,0.0121,0.0138,0.0159,0.0187,0.0234,0.0293,0.0384,0.0451],[0.0066,0.0078,0.0086,0.0097,0.0111,0.0125,0.0146,0.0173,0.021,0.0268,0.0327,0.037]];
+const $ = id => document.getElementById(id);
+const S = { index: null, match: null, freeze: null, trk: null, bin: null, filter: 'missed', q: '', items: [], cur: null,
+            view: 'track', tau: 0, playing: false, last: 0, hover: null, sim: null };
+const cache = new Map();
+
+function css(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function fmtClock(sec) { sec = Math.max(0, Math.round(sec)); return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`; }
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+function pct(x) { return x == null ? '–' : (100 * x).toFixed(x < 0.1 ? 1 : 0) + '%'; }
+function hyp(a, b) { return Math.hypot(a[0] - b[0], a[1] - b[1]); }
+function shortName(n) { if (!n) return '?'; const p = n.split(' '); return p.length > 2 ? `${p[0]} ${p[1]}` : n; }
+
+// expected threat at pitch position u (0..105 toward goal), v (0..68 top to bottom), bilinear between cell centres
+function xt(u, v) {
+  const cx = Math.min(Math.max(u / (PW / 12) - 0.5, 0), 11), cy = Math.min(Math.max((PH - v) / (PH / 8) - 0.5, 0), 7);
+  const x0 = Math.floor(cx), y0 = Math.floor(cy), x1 = Math.min(x0 + 1, 11), y1 = Math.min(y0 + 1, 7), fx = cx - x0, fy = cy - y0;
+  return (XT[y0][x0] * (1 - fx) + XT[y0][x1] * fx) * (1 - fy) + (XT[y1][x0] * (1 - fx) + XT[y1][x1] * fx) * fy;
+}
+
+// ---------- loading ----------
+function localPath(url) {   // a copy opened from the repo falls back to Code/data/demo
+  const m = url.match(/^d\/(freeze|passes|tracking)_(\d+)\.txt$/);
+  if (m) return `../data/demo/${m[1]}_${m[2]}.${m[1] === 'tracking' ? 'bin' : 'json'}.gz`;
+  if (url === 'd/index.json') return '../data/demo/index.json';
+  return null;
+}
+async function fetchBuf(url) {
+  if (cache.has(url)) return cache.get(url);
+  const p = (async () => {
+    try { return await fetchOne(url); }
+    catch (e) { const alt = localPath(url); if (!alt) throw e; return await fetchOne(alt); }
+  })();
+  cache.set(url, p); return p;
+}
+async function fetchOne(url) {
+  const res = await fetch(new URL(url, document.baseURI).href, { cache: 'force-cache' });
+  if (!res.ok) throw new Error(`Could not load ${url} (${res.status})`);
+  let buf;
+  if (url.endsWith('.txt')) {
+    const bin = atob((await res.text()).trim()); const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    buf = bytes.buffer;
+  } else buf = await res.arrayBuffer();
+  const head = new Uint8Array(buf, 0, 2);
+  if (head[0] === 0x1f && head[1] === 0x8b) {
+    if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot unzip the data. Open the page in an up-to-date Chrome, Edge or Firefox.');
+    buf = await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  }
+  return buf;
+}
+async function fetchJson(url) { return JSON.parse(new TextDecoder().decode(await fetchBuf(url))); }
+
+function decodeTracking(buf) {
+  const dv = new DataView(buf); const T = dv.getInt32(0, true), P = dv.getInt32(4, true); let o = 8;
+  const frame = new Int32Array(T); for (let i = 0; i < T; i++) frame[i] = dv.getInt32(o + 4 * i, true); o += 4 * T;
+  const period = new Int8Array(buf.slice(o, o + T)); o += T;
+  const series = () => { const out = new Float32Array(T); let prev = 0;
+    for (let i = 0; i < T; i++) { const v = dv.getInt16(o + 2 * i, true); if (v === -32768) out[i] = NaN; else { prev += v; out[i] = prev / 10; } }
+    o += 2 * T; return out; };
+  const X = [], Y = []; for (let j = 0; j < P; j++) { X.push(series()); Y.push(series()); }
+  const vis = new Int8Array(buf.slice(o, o + P * T)); o += P * T;
+  return { T, P, frame, period, X, Y, vis, bx: series(), by: series(), bz: series() };
+}
+function sample(arr, t) {
+  t = Math.min(Math.max(t, 0), arr.length - 1);
+  const i = Math.floor(t), f = t - i, a = arr[i], b = arr[Math.min(i + 1, arr.length - 1)];
+  if (Number.isNaN(a)) return b; if (Number.isNaN(b)) return a; return a + (b - a) * f;
+}
+function fromPff(x, y, s) { return [s * x + PW / 2, PH / 2 - s * y]; }
+function fromSb(x, y) { return [x * PW / 120, y * PH / 80]; }
+
+// ---------- setup ----------
+async function init() {
+  showMsg('Loading…');
+  try { S.index = await fetchJson('d/index.json'); }
+  catch (e) { fail('The match list could not be loaded', e); return; }
+  const sel = $('match');
+  for (const [c, name] of [['World Cup 2022', 'World Cup 2022 (full replay)'], ['Euro 2024', 'Euro 2024 (snapshots)'], ['Euro 2020', 'Euro 2020 (snapshots)']]) {
+    const og = document.createElement('optgroup'); og.label = name;
+    S.index.matches.filter(m => m.c === c).map(m => [m, m.home ? `${m.home} v ${m.away}` : m.teams.join(' v ')])
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .forEach(([m, n]) => { const op = document.createElement('option'); op.value = m.id; op.textContent = n; og.appendChild(op); });
+    sel.appendChild(og);
+  }
+  S.index.featured.forEach((f, i) => {
+    const b = document.createElement('button'); b.className = 'feat'; b.dataset.i = i;
+    b.innerHTML = `<b><svg aria-hidden="true"><use href="#ball"/></svg>${esc(f.title)}</b><span class="where">${esc(f.where)}</span><span>${esc(f.note)}</span>`;
+    b.addEventListener('click', () => openFeatured(i)); $('featured').appendChild(b);
+  });
+  sel.addEventListener('change', () => loadMatch(sel.value));
+  $('filters').addEventListener('click', e => { const b = e.target.closest('.chip'); if (!b) return;
+    S.filter = b.dataset.f; [...$('filters').children].forEach(c => c.setAttribute('aria-pressed', c === b)); renderList(); });
+  $('search').addEventListener('input', e => { S.q = e.target.value.trim().toLowerCase(); renderList(); });
+  $('vTrack').addEventListener('click', () => setView('track'));
+  $('vFreeze').addEventListener('click', () => setView('freeze'));
+  $('play').addEventListener('click', () => S.playing ? stop() : start());
+  $('toPass').addEventListener('click', () => { endSim(); stop(); S.tau = passTime(); draw(); });
+  $('restart').addEventListener('click', () => { endSim(); stop(); S.tau = win()[0]; draw(); });
+  $('scrub').addEventListener('input', e => { if (S.sim) return; stop(); const [a, b] = win(); S.tau = a + (b - a) * e.target.value / 1000; draw(); });
+  $('showAll').addEventListener('change', draw);
+  $('pitch').addEventListener('click', onPitchClick);
+  $('pitch').addEventListener('mousemove', onPitchMove);
+  new ResizeObserver(() => draw()).observe($('pitch'));
+  await openFeatured(0);
+}
+function markFeatured(i) { [...$('featured').children].forEach(b => b.setAttribute('aria-current', String(+b.dataset.i === i))); }
+async function openFeatured(i) { const f = S.index.featured[i]; markFeatured(i); $('match').value = f.match; await loadMatch(f.match, f.e, true); }
+
+async function loadMatch(id, eventId, keepFeatured) {
+  stop(); endSim(); if (!keepFeatured) markFeatured(-1);
+  const m = S.index.matches.find(x => x.id === id); S.match = m;
+  showMsg('Loading the match…');
+  try {
+    S.freeze = await fetchJson(`d/freeze_${id}.txt`);
+    S.freezeById = new Map(S.freeze.passes.map(p => [p.e, p]));
+    S.trk = null; S.bin = null;
+    if (m.gid) {
+      S.trk = await fetchJson(`d/passes_${m.gid}.txt`);
+      S.players = new Map(S.trk.players.map(p => [p.id, p]));
+      S.col = new Map(S.trk.cols.map((p, j) => [p, j]));
+      fetchBuf(`d/tracking_${m.gid}.txt`).then(buf => { if (S.match !== m) return; S.bin = decodeTracking(buf); hideMsg(); draw(); })
+        .catch(e => fail('The replay for this match could not be loaded (the snapshot still works)', e));
+    }
+  } catch (e) { fail('This match could not be loaded', e); return; }
+  buildItems();
+  if (eventId && S.filter !== 'all' && !visibleItems().some(it => it.fp?.e === eventId)) setFilter('all');
+  renderList();
+  let first = eventId ? S.items.find(it => it.fp && it.fp.e === eventId) : null;
+  if (!first) first = visibleItems()[0] || S.items[0];
+  selectItem(first);
+}
+function setFilter(f) { S.filter = f; [...$('filters').children].forEach(c => c.setAttribute('aria-pressed', c.dataset.f === f)); }
+
+function buildItems() {
+  const items = [];
+  if (S.trk) {
+    for (const tp of S.trk.passes) {
+      const fp = tp.sb ? S.freezeById.get(tp.sb) : null;
+      if (!fp) continue;                                         // only passes with valued options
+      const rid = tp.r ?? tp.tg, rm = tp.m.find(x => x[0] === rid);
+      const pn = S.players.get(tp.p)?.n, rn = rid != null ? S.players.get(rid)?.n : null;
+      items.push({ tp, fp, clk: tp.clk, per: tp.per, who: `${shortName(pn)} → ${rn ? shortName(rn) : '?'}`,
+        missed: (tp.rq2 ? tp.rq2[0] : fp.rq2[0]) === 1, blind: rm ? rm[1] === 0 : false, expert: tp.lab != null && tp.lt === 'P' });
+    }
+  } else {
+    for (const fp of S.freeze.passes) {
+      const rm = fp.m.find(x => x[10] === 1);
+      items.push({ tp: null, fp, clk: fp.min * 60 + fp.sec, per: fp.per, who: `${shortName(fp.pl)} → ${shortName(fp.to)}`,
+        missed: fp.rq2[0] === 1, blind: rm ? rm[2] === 0 : false, expert: false });
+    }
+  }
+  S.items = items;
+}
+function visibleItems() {
+  return S.items.filter(it => (S.filter === 'all' || it[S.filter]) && (!S.q || it.who.toLowerCase().includes(S.q)));
+}
+function renderList() {
+  const list = $('list'); list.textContent = ''; const its = visibleItems(), cap = 500;
+  const label = { missed: 'missed a better option', blind: 'passed without looking', expert: 'picked out by match analysts', all: 'passes' }[S.filter];
+  $('count').textContent = S.filter === 'all' ? `${its.length} passes in this match` : `${its.length} of ${S.items.length} passes ${label}`;
+  if (!its.length) { const p = document.createElement('p'); p.className = 'count'; p.style.padding = '10px';
+    p.textContent = S.filter === 'expert' ? 'Match analysts did not pick out any pass in this match. Try another filter.' : 'No passes match. Try another filter.'; list.appendChild(p); }
+  const frag = document.createDocumentFragment();
+  its.slice(0, cap).forEach(it => {
+    const b = document.createElement('button'); b.className = 'row'; b.setAttribute('role', 'listitem');
+    if (it === S.cur) b.setAttribute('aria-current', 'true');
+    const d = [];
+    if (it.missed) d.push('<i class="dot" title="Missed a better option" style="background:var(--good)"></i>');
+    if (it.blind) d.push('<i class="dot" title="Passed to someone out of view" style="background:var(--team)"></i>');
+    if (it.expert) d.push('<i class="dot" title="Picked out by match analysts" style="background:var(--risky)"></i>');
+    b.innerHTML = `<span class="clk">${fmtClock(it.clk)}</span><span><span class="who">${esc(it.who)}</span><span class="dots">${d.join('')}</span></span>`;
+    b.addEventListener('click', () => { markFeatured(-1); selectItem(it); }); it.el = b; frag.appendChild(b);
+  });
+  list.appendChild(frag);
+}
+
+function selectItem(it) {
+  if (!it) return;
+  stop(); endSim();
+  if (S.cur?.el) S.cur.el.removeAttribute('aria-current');
+  S.cur = it; if (it.el) { it.el.setAttribute('aria-current', 'true'); const L = $("list"), top = it.el.offsetTop; if (top < L.scrollTop || top > L.scrollTop + L.clientHeight - it.el.offsetHeight) L.scrollTop = top - L.clientHeight / 2; }
+  $('vTrack').disabled = !it.tp; $('vFreeze').disabled = !it.fp;
+  if (!it.tp) S.view = 'freeze'; else if (S.view !== 'freeze') S.view = 'track';
+  syncView(); S.tau = passTime();
+  renderHead(); renderPanel(); draw();
+}
+function setView(v) { if ((v === 'track' && !S.cur?.tp) || (v === 'freeze' && !S.cur?.fp)) return; stop(); endSim(); S.view = v; syncView(); S.tau = passTime(); renderPanel(); draw(); }
+function syncView() {
+  $('vTrack').setAttribute('aria-pressed', S.view === 'track'); $('vFreeze').setAttribute('aria-pressed', S.view === 'freeze');
+  const on = S.view === 'track'; ['restart', 'scrub', 'slow'].forEach(id => $(id).disabled = !on);
+}
+function passTime() { return S.view === 'track' && S.cur?.tp ? S.cur.tp.t : 0; }
+
+function matchName() { const m = S.match; return m.home ? `${m.home} v ${m.away}` : m.teams.join(' v '); }
+function renderHead() {
+  const it = S.cur, fp = it.fp;
+  const passer = it.tp ? S.players.get(it.tp.p)?.n : fp.pl;
+  const rid = it.tp ? (it.tp.r ?? it.tp.tg) : null;
+  const recv = it.tp ? (rid != null ? S.players.get(rid)?.n : null) : fp.to;
+  $('passTitle').textContent = `${passer ?? '?'} to ${recv ?? '?'}`;
+  $('passMeta').textContent = `${matchName()}, ${S.match.c} · ${fmtClock(it.clk)} · ${fp.team}`;
+}
+
+// ---------- the scene at a time: positions of everyone, in pitch metres with the passing team attacking right ----------
+function scene(tau) {
+  const it = S.cur, out = { mates: [], opps: [], ball: null, est: new Set() };
+  if (S.view === 'track' && it.tp && S.bin) {
+    const B = S.bin, tp = it.tp, s = tp.s, home = S.players.get(tp.p)?.home, i = Math.round(Math.min(Math.max(tau, 0), B.T - 1));
+    for (let j = 0; j < B.P; j++) {
+      const x = sample(B.X[j], tau); if (Number.isNaN(x)) continue;
+      const pos = fromPff(x, sample(B.Y[j], tau), s);
+      const prev = fromPff(sample(B.X[j], tau - 1), sample(B.Y[j], tau - 1), s);
+      const vel = Number.isNaN(prev[0]) ? [0, 0] : [(pos[0] - prev[0]) * HZ, (pos[1] - prev[1]) * HZ];
+      const pid = S.trk.cols[j], p = S.players.get(pid);
+      const rec = { id: pid, pos, vel, j: p?.j, gk: p?.pos === 'GK', est: B.vis[j * B.T + i] === 0 };
+      (p && p.home === home ? out.mates : out.opps).push(rec);
+    }
+    const bx = sample(B.bx, tau); if (!Number.isNaN(bx)) out.ball = [...fromPff(bx, sample(B.by, tau), s), Math.max(0, sample(B.bz, tau) || 0)];
+  } else if (it.fp) {
+    const fp = it.fp;
+    fp.m.forEach((m, k) => out.mates.push({ id: 'f' + k, pos: fromSb(m[0], m[1]), vel: [0, 0] }));
+    out.mates.push({ id: 'passer', pos: fromSb(fp.P[0], fp.P[1]), vel: [0, 0] });
+    fp.x.forEach((o, k) => out.opps.push({ id: 'o' + k, pos: fromSb(o[0], o[1]), vel: [0, 0], gk: o[2] === 1 }));
+  }
+  return out;
+}
+function playerAt(id, tau) { return scene(tau).mates.find(m => m.id === id) || null; }
+
+// ---------- options for the selected pass ----------
+function options() {
+  const it = S.cur, rows = [];
+  if (S.view === 'track' && it.tp) {
+    const tp = it.tp, rid = tp.r ?? tp.tg;
+    for (const m of tp.m) {
+      const p = S.players.get(m[0]) ?? {};
+      rows.push({ id: m[0], name: shortName(p.n), jersey: p.j, inView: m[14] != null ? m[14] === 1 : m[1] === 1, seen: m[2], gap: m[3], ghost: m[4] != null ? fromPff(m[4], m[5], tp.s) : null,
+        v: m[8], xp: m[9], off: m[10] === 1, legit: m[12] === 1, arrive: m[13], rec: m[0] === rid, expert: tp.lab === m[0] && tp.lt === 'P' });
+    }
+  } else if (it.fp) {
+    it.fp.m.forEach((m, k) => rows.push({ id: 'f' + k, name: m[10] === 1 ? shortName(it.fp.to) : null, inView: m[2] === 1, v: m[3], xp: m[4],
+      off: m[5] === 1, legit: m[7] === 1, arrive: null, rec: m[10] === 1 }));
+  }
+  const rv = realValue();
+  rows.forEach(r => {
+    r.gain = r.v != null && rv != null ? r.v - rv : null;
+    r.kind = r.rec ? 'played' : r.gain == null ? 'none' : r.legit ? 'good' : r.gain > 0 ? 'risky' : 'worse';
+  });
+  const valued = rows.filter(r => r.v != null).sort((a, b) => b.v - a.v);
+  valued.forEach((r, i) => { r.rank = i + 1; if (!r.name) r.name = `Teammate ${r.rank}`; });
+  rows.forEach(r => { if (!r.name) r.name = 'Teammate'; });
+  const alts = valued.filter(r => !r.rec);
+  const order = [...new Set(alts.filter(r => r.kind === 'good').concat(alts))];
+  const top = new Set(order.slice(0, TOP_N).map(r => r.id));
+  rows.forEach(r => r.top = top.has(r.id));
+  return rows;
+}
+function realValue() { return S.cur.tp?.rv ?? S.cur.fp?.rv ?? null; }
+function realXp() { return S.cur.tp?.rxp ?? S.cur.fp?.rxp ?? null; }
+function catch_(r) {
+  const why = [];
+  if (!r.inView) why.push('out of view'); if (r.off) why.push('offside'); if (r.xp != null && r.xp < 0.05) why.push('very unlikely to complete');
+  return why.join(', ') || 'not a more dangerous area';
+}
+
+function renderPanel() {
+  const rows = options(), alts = rows.filter(r => r.gain != null && !r.rec).sort((a, b) => b.gain - a.gain);
+  const good = alts.filter(r => r.kind === 'good'), risky = alts.filter(r => r.kind === 'risky');
+  const track = S.view === 'track' && S.cur.tp;
+  let v;
+  if (good.length) {
+    const b = good[0];
+    v = `<b>A better option was on.</b> ${esc(b.name)} was in view, onside and a realistic pass, worth ${(100 * b.gain).toFixed(1)} more than the pass that was played.`;
+    if (track && b.arrive === 1) v += ' The tracking says the ball would have reached him.';
+    if (track && b.arrive === 0) v += ' The tracking suggests a quick defender could have reached the ball first.';
+    if (good.length > 1) v += good.length > 2 ? ` ${good.length - 1} other teammates were also better options.` : ' One other teammate was also a better option.';
+  } else if (risky.length) {
+    v = `<b>The pass played was the best realistic option.</b> ${esc(risky[0].name)} was worth more, but ${catch_(risky[0])}.`;
+  } else v = '<b>Good choice.</b> No teammate was a better option than the pass that was played.';
+  const ex = rows.find(r => r.expert); if (ex) v += ` Match analysts also picked out ${esc(ex.name)} as the better pass.`;
+  $('verdict').innerHTML = v + ' <span class="no">Press <b>Play this pass</b> on any teammate to see what might have followed.</span>';
+
+  const maxAbs = Math.max(0.0005, ...alts.map(r => Math.abs(r.gain)));
+  const colour = { good: 'var(--good)', risky: 'var(--risky)', worse: 'var(--worse)' };
+  let h = `<thead><tr><th>Teammate</th><th>In view</th><th>Value vs pass played</th><th style="text-align:right">Completes</th>${track ? '<th>Ball gets there</th>' : ''}<th></th></tr></thead><tbody>`;
+  const rec = rows.find(r => r.rec);
+  h += `<tr class="played"><td><span class="sq" style="background:var(--fg)"></span>Pass played${rec ? ' to ' + esc(rec.name) : ''}</td><td>${rec ? (rec.inView ? '<span class="yes">yes</span>' : '<span class="no">no</span>') : ''}</td><td><span class="no">baseline</span></td><td class="num">${realXp() != null ? Math.round(100 * realXp()) + '%' : '–'}</td>${track ? '<td></td>' : ''}<td></td></tr>`;
+  for (const r of alts) {
+    const w = Math.abs(r.gain) / maxAbs * 50;
+    const bar = `<div class="bar"><div class="track"><div class="fill" style="background:${colour[r.kind]};${r.gain >= 0 ? `left:50%;width:${w}%` : `right:50%;width:${w}%`}"></div></div><span class="n">${r.gain >= 0 ? '+' : ''}${(100 * r.gain).toFixed(1)}</span></div>`;
+    const tags = (r.off ? '<span class="tag">offside</span>' : '') + (r.expert ? '<span class="tag exp">expert pick</span>' : '');
+    const view = r.inView ? '<span class="yes">yes</span>' : (track && r.seen ? `<span class="no">seen ${r.gap?.toFixed(1)} s ago</span>` : '<span class="no">no</span>');
+    h += `<tr data-id="${r.id}"><td><span class="sq" style="background:${colour[r.kind]}"></span>${r.jersey ? '#' + r.jersey + ' ' : ''}${esc(r.name)}${tags}</td><td>${view}</td><td>${bar}</td>` +
+      `<td class="num">${r.xp != null ? Math.round(100 * r.xp) + '%' : '–'}</td>${track ? `<td>${r.arrive === 1 ? '<span class="yes">yes</span>' : r.arrive === 0 ? '<span class="no">likely cut out</span>' : '–'}</td>` : ''}` +
+      `<td><button class="btn go" data-try="${r.id}">Play this pass</button></td></tr>`;
+  }
+  $('table').innerHTML = h + '</tbody>';
+  $('table').querySelectorAll('tbody tr[data-id]').forEach(tr => {
+    const id = isNaN(+tr.dataset.id) ? tr.dataset.id : +tr.dataset.id;
+    tr.addEventListener('mouseenter', () => { S.hover = id; draw(); });
+    tr.addEventListener('mouseleave', () => { S.hover = null; draw(); });
+  });
+  $('table').querySelectorAll('[data-try]').forEach(b => b.addEventListener('click', () => {
+    const id = isNaN(+b.dataset.try) ? b.dataset.try : +b.dataset.try; runSim(id); $('pitch').scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }));
+  $('whatif').hidden = true;
+}
+
+// ---------- what-if simulation ----------
+// time a player needs to reach a point: keep moving for the reaction time, then run straight at top speed
+function reachTime(p, point) { const q = [p.pos[0] + p.vel[0] * REACT, p.pos[1] + p.vel[1] * REACT]; return REACT + hyp(q, point) / VMAX; }
+// first point on the ball's path that an opponent reaches before the ball, or null if the pass gets through
+function interception(from, to, opps) {
+  const L = hyp(from, to); if (L < 1) return null;
+  for (let s = 2; s <= L; s += 1) {
+    const pt = [from[0] + (to[0] - from[0]) * s / L, from[1] + (to[1] - from[1]) * s / L];
+    for (const o of opps) if (reachTime(o, pt) < s / BALL) {
+      // how comfortably could he do it? the most time he has to spare anywhere along the rest of the ball's path
+      let spare = 0;
+      for (let u = s; u <= L; u += 1) { const q = [from[0] + (to[0] - from[0]) * u / L, from[1] + (to[1] - from[1]) * u / L]; spare = Math.max(spare, u / BALL - reachTime(o, q)); }
+      return { pt, s, by: o, spare };
+    }
+  }
+  return null;
+}
+function inPlay(u, v) { return u >= 0 && u <= PW && v >= 0 && v <= PH; }
+// a pass from `from` at time t0 to teammate id: aim where he will really be when the ball arrives
+function planPass(from, t0, id) {
+  let target = playerAt(id, t0)?.pos; if (!target) return null;
+  let dt = 0;
+  if (S.view === 'track') for (let k = 0; k < 3; k++) {
+    dt = hyp(from, target) / BALL; const t1 = Math.min(t0 + dt * HZ, win()[1]); const p = playerAt(id, t1); if (p) target = p.pos;
+  } else dt = hyp(from, target) / BALL;
+  dt = hyp(from, target) / BALL;
+  const opps = scene(t0).opps; const cut = interception(from, target, opps);
+  // the defender who goes for the ball: the one who cuts it out, or else the one who gets closest to the receiving spot
+  let chaser = null;
+  if (cut) chaser = { o: cut.by, meet: cut.pt, t: reachTime(cut.by, cut.pt) };
+  else for (const o of opps) { if (o.gk) continue; const t = reachTime(o, target); if (!chaser || t < chaser.t) chaser = { o, meet: target, t }; }
+  if (chaser) chaser = { id: chaser.o.id, p0: chaser.o.pos, v: chaser.o.vel, meet: chaser.meet, t: chaser.t, j: chaser.o.j };
+  return { from, to: cut ? cut.pt : target, aim: target, t0, dur: (cut ? cut.s : hyp(from, target)) / BALL, id, cut, chaser };
+}
+// where a chasing defender is, t seconds after the pass: keeps his momentum for the reaction time, then runs straight at the meeting point at top speed
+function chaserPos(c, t) {
+  const q = [c.p0[0] + c.v[0] * REACT, c.p0[1] + c.v[1] * REACT];
+  if (t <= REACT) return [c.p0[0] + c.v[0] * t, c.p0[1] + c.v[1] * t];
+  const d = hyp(q, c.meet), run = (t - REACT) * VMAX;
+  if (run >= d) return c.meet.slice();
+  return [q[0] + (c.meet[0] - q[0]) * run / d, q[1] + (c.meet[1] - q[1]) * run / d];
+}
+// positions of chasing defenders at the current what-if clock (later steps take over from earlier ones)
+function chaserPositions() {
+  const out = new Map(); if (!S.sim) return out; let start = 0;
+  for (const st of S.sim.steps) {
+    const t = S.sim.clock - start; if (t < 0) break;
+    if (st.chaser) out.set(st.chaser.id, chaserPos(st.chaser, t));
+    start += st.dur + 0.4;
+  }
+  return out;
+}
+function runSim(id) {
+  stop(); const t0 = passTime(); S.tau = t0;
+  const passer = S.view === 'track' ? playerAt(S.cur.tp.p, t0) : playerAt('passer', 0);
+  if (!passer) return;
+  const step1 = planPass(passer.pos, t0, id); if (!step1) return;
+  const steps = [step1];
+  if (!step1.cut) {
+    // the receiver looks for the most dangerous pass he could make next
+    const t1 = t0 + step1.dur * (S.view === 'track' ? HZ : 1);
+    const here = step1.aim, base = xt(here[0], here[1]);
+    let best = null;
+    for (const m of scene(t1).mates) {
+      if (m.id === id || m.id === (S.view === 'track' ? S.cur.tp.p : 'passer')) continue;
+      if (xt(m.pos[0], m.pos[1]) <= base + 0.002 || hyp(m.pos, here) < 5) continue;
+      const pl = planPass(here, t1, m.id); if (!pl || pl.cut || !inPlay(...pl.aim)) continue;
+      const val = xt(pl.aim[0], pl.aim[1]); if (!best || val > best.val) best = { ...pl, val };
+    }
+    if (best) steps.push(best);
+  }
+  const opts = options(); const nameOf = id2 => { const r = opts.find(r => r.id === id2); if (r) return (r.jersey ? '#' + r.jersey + ' ' : '') + r.name;
+    const p = S.players?.get(id2); return p ? `#${p.j} ${shortName(p.n)}` : 'a teammate'; };
+  S.sim = { steps, nameOf, k: 0, startTau: t0, clock: 0, done: false };
+  showWhatIf(); S.playing = true; S.last = performance.now(); $('play').textContent = 'Pause'; requestAnimationFrame(tick);
+}
+function endSim() { if (S.sim) { S.sim = null; $('whatif').hidden = true; } }
+function simBall() {
+  const sim = S.sim; let t = sim.clock;
+  for (const st of sim.steps) {
+    if (t <= st.dur) { const f = st.dur ? t / st.dur : 1; return [st.from[0] + (st.to[0] - st.from[0]) * f, st.from[1] + (st.to[1] - st.from[1]) * f]; }
+    t -= st.dur + 0.4;                                          // a short touch before the next pass
+    if (t < 0) return st.to;
+  }
+  const last = sim.steps[sim.steps.length - 1]; return last.to;
+}
+function simLength() { return S.sim.steps.reduce((a, s) => a + s.dur, 0) + 0.4 * (S.sim.steps.length - 1); }
+
+function realOutcome() {
+  // where the real pass went and the most dangerous spot the ball reached in the next 8 seconds
+  const it = S.cur; let recvPos = null, peak = null;
+  if (S.view === 'track' && it.tp && S.bin) {
+    const rid = it.tp.r ?? it.tp.tg, t0 = it.tp.t, p0 = playerAt(it.tp.p, t0)?.pos;
+    if (rid != null && p0) { let tgt = playerAt(rid, t0)?.pos; for (let k = 0; k < 3 && tgt; k++) { const p = playerAt(rid, Math.min(t0 + hyp(p0, tgt) / BALL * HZ, win()[1])); if (p) tgt = p.pos; } recvPos = tgt; }
+    const [, b] = win(); peak = 0;
+    for (let t = t0; t <= b; t += 1) { const sc = scene(t); if (sc.ball && inPlay(sc.ball[0], sc.ball[1])) peak = Math.max(peak, xt(sc.ball[0], sc.ball[1])); }
+  } else if (it.fp) recvPos = fromSb(it.fp.E[0], it.fp.E[1]);
+  return { recvPos, peak };
+}
+function bypassed(from, to, opps) { return opps.filter(o => !o.gk && o.pos[0] > from[0] + 1 && o.pos[0] < to[0] - 1).length; }
+function nearest(p, opps) { return Math.min(...opps.map(o => hyp(o.pos, p))); }
+
+function showWhatIf() {
+  const sim = S.sim, s1 = sim.steps[0], s2 = sim.steps[1], t0 = passTime(), opps0 = scene(t0).opps;
+  const real = realOutcome(), passer = s1.from;
+  const box = $('whatif'); box.hidden = false; box.classList.toggle('cut', !!s1.cut);
+  const name1 = sim.nameOf(s1.id);
+  const t1 = t0 + s1.dur * (S.view === 'track' ? HZ : 1), opps1 = scene(t1).opps;
+  const realThreat = real.recvPos ? xt(...real.recvPos) : null, optThreat = xt(...s1.aim);
+  let h = `<h4>What if the ball had gone to ${esc(name1)}?</h4>`;
+  if (s1.cut) {
+    const by = s1.cut.by; const who = by.j ? `#${by.j}` : 'a defender';
+    const close = s1.cut.spare < 0.3;
+    h += close
+      ? `<p>It's a close call: ${who} (red ring) could only just reach the ball's path, after ${Math.round(s1.cut.s)} metres, with at most ${s1.cut.spare.toFixed(1)} s to spare. A slightly quicker pass, or a slower defender, and it gets through. Watch him: he gets there at the same moment as the ball.</p>`
+      : `<p>The pass would probably have been cut out by ${who} after ${Math.round(s1.cut.s)} metres. Watch him (red ring): if he goes for the ball, he can reach its path with up to ${s1.cut.spare.toFixed(1)} s to spare. A higher-value pass is only better if it arrives.</p>`;
+    h +=
+      `<p class="note">In the real match he didn't go for it, because the pass was never played. This assumes he reacts after ${REACT} s and sprints at up to ${VMAX} m/s, so it shows what a quick defender could do.</p>`;
+  } else {
+    const ch = s1.chaser, chWho = ch ? (ch.j ? `#${ch.j}` : 'the nearest defender') : null;
+    h += `<p>The ball reaches him in ${s1.dur.toFixed(1)} s with the nearest opponent ${nearest(s1.aim, opps1).toFixed(0)} m away.` +
+      (ch ? (ch.t > s1.dur ? ` Even if ${chWho} (red ring) sprints for it straight away, he needs ${ch.t.toFixed(1)} s, so he arrives too late.`
+                           : ` ${chWho} (red ring) would arrive at about the same moment, so it is tight.`) : '') +
+      (xt(...s1.aim) >= 0.05 ? ' He would be in a shooting position.' : '') +
+      (s2 ? ` From there, his most dangerous next pass is to ${esc(sim.nameOf(s2.id))}, which no defender could cut out.` : (xt(...s1.aim) >= 0.05 ? '' : ' From there, no safe pass would take the ball into a more dangerous area.')) + '</p>';
+  }
+  if (s1.cut) {
+    h += `<div class="controls"><button class="btn" id="simAgain">Play it again</button><button class="btn" id="simExit">Back to what really happened</button></div>`;
+    box.innerHTML = h;
+    $('simAgain').addEventListener('click', () => runSim(s1.id));
+    $('simExit').addEventListener('click', () => { endSim(); stop(); S.tau = passTime(); draw(); });
+    return;
+  }
+  const fmtCmp = (a, b, unit = '') => `<b>${a}${unit}</b> <i>vs ${b}${unit} for the pass played</i>`;
+  h += '<div class="compare">';
+  h += `<div class="metric"><span class="k">Threat where the ball is received</span><span class="v">${fmtCmp(pct(optThreat), pct(realThreat))}</span></div>`;
+  h += `<div class="metric"><span class="k">Opponents taken out of the game</span><span class="v">${fmtCmp(bypassed(passer, s1.aim, opps0), real.recvPos ? bypassed(passer, real.recvPos, opps0) : '–')}</span></div>`;
+  if (s2) h += `<div class="metric"><span class="k">Threat after his next pass</span><span class="v"><b>${pct(s2.val)}</b>${real.peak != null ? ` <i>vs ${pct(real.peak)} at the most dangerous point of the real move</i>` : ''}</span></div>`;
+  else if (real.peak != null) h += `<div class="metric"><span class="k">Real move: most dangerous point in the next 8 s</span><span class="v"><b>${pct(real.peak)}</b></span></div>`;
+  h += '</div>';
+  h += `<div class="controls"><button class="btn" id="simAgain">Play it again</button><button class="btn" id="simExit">Back to what really happened</button></div>`;
+  box.innerHTML = h;
+  $('simAgain').addEventListener('click', () => runSim(s1.id));
+  $('simExit').addEventListener('click', () => { endSim(); stop(); S.tau = passTime(); draw(); });
+}
+
+// ---------- playback ----------
+function win() {
+  const tp = S.cur?.tp; if (S.view !== 'track' || !tp || !S.bin) return [0, 1];
+  const a = tp.t - BEFORE * HZ, b = tp.t + AFTER * HZ, per = S.bin.period, fr = S.bin.frame, i0 = Math.round(tp.t), step = 3 * (S.trk.sub || 2);
+  let lo = i0; while (lo > 0 && lo > a && per[lo - 1] === per[i0] && fr[lo] - fr[lo - 1] <= step + 1) lo--;
+  let hi = i0; while (hi < S.bin.T - 1 && hi < b && per[hi + 1] === per[i0] && fr[hi + 1] - fr[hi] <= step + 1) hi++;
+  return [Math.max(a, lo), Math.min(b, hi)];
+}
+function start() {
+  if (S.sim) { if (S.sim.clock >= simLength()) S.sim.clock = 0; S.playing = true; S.last = performance.now(); $('play').textContent = 'Pause'; requestAnimationFrame(tick); return; }
+  if (S.view !== 'track' || !S.bin) return;
+  const [a, b] = win(); if (S.tau >= b - 0.01) S.tau = a;
+  S.playing = true; S.last = performance.now(); $('play').textContent = 'Pause';
+  S.passPaused = S.tau >= S.cur.tp.t - 0.01; requestAnimationFrame(tick);
+}
+function stop() { S.playing = false; $('play').textContent = 'Play'; }
+function tick(now) {
+  if (!S.playing) return;
+  const dt = Math.min(0.1, (now - S.last) / 1000) * ($('slow').checked ? 0.5 : 1); S.last = now;
+  if (S.sim) {
+    S.sim.clock += dt;
+    if (S.view === 'track') S.tau = Math.min(S.sim.startTau + S.sim.clock * HZ, win()[1]);
+    if (S.sim.clock >= simLength()) { S.sim.clock = simLength(); stop(); }
+    draw(); if (S.playing) requestAnimationFrame(tick); return;
+  }
+  const prev = S.tau; S.tau += dt * HZ;
+  const tp = S.cur.tp, [, b] = win();
+  if (!S.passPaused && prev < tp.t && S.tau >= tp.t) { S.tau = tp.t; S.passPaused = true; stop(); draw(); return; }
+  if (S.tau >= b) { S.tau = b; stop(); }
+  draw(); if (S.playing) requestAnimationFrame(tick);
+}
+
+// ---------- pitch interaction ----------
+function toPitch(ev) { const c = $('pitch'), r = c.getBoundingClientRect(), k = r.width / (PW + 2 * PAD); return [(ev.clientX - r.left) / k - PAD, (ev.clientY - r.top) / k - PAD]; }
+function mateUnder(ev) {
+  if (Math.abs(S.tau - passTime()) > 0.6 || S.sim) return null;
+  const p = toPitch(ev), opts = new Map(options().map(r => [r.id, r]));
+  let best = null; for (const m of scene(passTime()).mates) { const r = opts.get(m.id); if (!r || r.gain == null || r.rec) continue; const d = hyp(m.pos, p); if (d < 2.5 && (!best || d < best.d)) best = { id: m.id, d }; }
+  return best?.id ?? null;
+}
+function onPitchClick(ev) { const id = mateUnder(ev); if (id != null) runSim(id); }
+function onPitchMove(ev) { const id = mateUnder(ev); $('pitch').style.cursor = id != null ? 'pointer' : 'default'; if (id !== S.hover) { S.hover = id; draw(); } }
+
+// ---------- drawing ----------
+function showMsg(t) { const m = $('msg'); m.textContent = t; m.hidden = false; }
+function hideMsg() { $('msg').hidden = true; }
+function fail(what, e) { const d = e && e.message ? e.message : String(e); showMsg(`${what}. ${d}`); $('count').textContent = `${what}: ${d}`; console.error(what, e); }
+window.addEventListener('error', ev => fail('The page hit an error', ev.error || ev.message));
+window.addEventListener('unhandledrejection', ev => fail('The page hit an error', ev.reason));
+
+function setup() {
+  const c = $('pitch'), r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1; if (!r.width) return null;
+  c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr);
+  const ctx = c.getContext('2d'), k = c.width / (PW + 2 * PAD); ctx.setTransform(k, 0, 0, k, PAD * k, PAD * k);
+  return { ctx, px: dpr / k };
+}
+function drawPitch(ctx, px) {
+  ctx.fillStyle = css('--pitch'); ctx.fillRect(-PAD, -PAD, PW + 2 * PAD, PH + 2 * PAD);
+  ctx.strokeStyle = css('--pitch-line'); ctx.lineWidth = 1.6 * px; ctx.strokeRect(0, 0, PW, PH);
+  ctx.beginPath(); ctx.moveTo(PW / 2, 0); ctx.lineTo(PW / 2, PH); ctx.stroke();
+  ctx.beginPath(); ctx.arc(PW / 2, PH / 2, 9.15, 0, 2 * Math.PI); ctx.stroke();
+  for (const side of [0, 1]) {
+    ctx.strokeRect(side ? PW - 16.5 : 0, PH / 2 - 20.16, 16.5, 40.32); ctx.strokeRect(side ? PW - 5.5 : 0, PH / 2 - 9.16, 5.5, 18.32);
+    ctx.beginPath(); ctx.arc(side ? PW - 11 : 11, PH / 2, 9.15, side ? Math.PI - 0.93 : -0.93, side ? Math.PI + 0.93 : 0.93); ctx.stroke();
+    ctx.fillStyle = css('--pitch-line'); ctx.fillRect(side ? PW : -1.2, PH / 2 - 3.66, 1.2, 7.32);
+  }
+  ctx.fillStyle = css('--muted'); ctx.font = `${11 * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+  ctx.fillText('attacking →', PW - 1, PH + 3);
+}
+function cone(ctx, u, v, dx, dy) {
+  const a = Math.atan2(dy, dx); ctx.save(); ctx.beginPath(); ctx.rect(0, 0, PW, PH); ctx.clip();
+  ctx.fillStyle = css('--cone'); ctx.beginPath(); ctx.moveTo(u, v); ctx.arc(u, v, 130, a - Math.PI / 3, a + Math.PI / 3); ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function arrow(ctx, a, b, color, w, dash, px) {
+  ctx.save(); ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = w * px; ctx.setLineDash((dash || []).map(d => d * px));
+  ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.setLineDash([]);
+  const ang = Math.atan2(b[1] - a[1], b[0] - a[0]), h = w * 4 * px;
+  ctx.beginPath(); ctx.moveTo(b[0], b[1]); ctx.lineTo(b[0] - h * Math.cos(ang - 0.42), b[1] - h * Math.sin(ang - 0.42));
+  ctx.lineTo(b[0] - h * Math.cos(ang + 0.42), b[1] - h * Math.sin(ang + 0.42)); ctx.closePath(); ctx.fill(); ctx.restore();
+}
+function disc(ctx, p, r, fill, stroke, w, alpha = 1, dash) {
+  ctx.save(); ctx.globalAlpha = alpha; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 2 * Math.PI);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = w; if (dash) ctx.setLineDash(dash); ctx.stroke(); } ctx.restore();
+}
+function text(ctx, s, p, px, color, size = 10, weight = 600) {
+  ctx.fillStyle = color; ctx.font = `${weight} ${size * px}px "IBM Plex Mono", monospace`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(s, p[0], p[1] + 0.05);
+}
+const kindColour = k => ({ good: css('--good'), risky: css('--risky'), worse: css('--worse') }[k]);
+
+function draw() {
+  const g = setup(); if (!g || !S.cur) return; const { ctx, px } = g;
+  drawPitch(ctx, px);
+  if (S.view === 'track' && S.cur.tp && !S.bin) { showMsg('Loading the replay for this match…'); updateTime(); return; }
+  hideMsg();
+  const it = S.cur, tau = S.tau, sc = scene(tau), t0 = passTime(), atPass = !S.sim && Math.abs(tau - t0) < 0.6;
+  const rows = options(), byId = new Map(rows.map(r => [r.id, r])), showAll = $('showAll').checked;
+  const passerId = S.view === 'track' ? it.tp.p : 'passer';
+  const sc0 = atPass || S.sim ? scene(t0) : null;
+  const P0 = sc0?.mates.find(m => m.id === passerId)?.pos;
+
+  if (S.view === 'freeze' && it.fp.va?.length >= 6) {          // what the camera saw
+    ctx.save(); ctx.beginPath(); ctx.rect(0, 0, PW, PH); ctx.clip(); ctx.beginPath();
+    for (let i = 0; i < it.fp.va.length; i += 2) { const q = fromSb(it.fp.va[i], it.fp.va[i + 1]); i ? ctx.lineTo(...q) : ctx.moveTo(...q); }
+    ctx.closePath(); ctx.fillStyle = css('--area'); ctx.fill(); ctx.restore();
+  }
+  // analysis at the moment of the pass
+  if (atPass && P0) {
+    // the same facing direction in both views (movement from the previous touch into the pass), so 'in view' always matches the cone
+    const h = it.fp?.o ? [it.fp.o[0] * PW / 120, it.fp.o[1] * PH / 80] : (S.view === 'track' && it.tp.h ? [it.tp.s * it.tp.h[0], -it.tp.s * it.tp.h[1]] : null);
+    if (h) cone(ctx, P0[0], P0[1], h[0], h[1]);
+    for (const m of sc0.mates) {
+      const r = byId.get(m.id); if (!r) continue;
+      if (S.view === 'track' && !r.inView && r.seen && r.ghost && (showAll || r.top || S.hover === m.id)) {
+        ctx.save(); ctx.strokeStyle = css('--memory'); ctx.lineWidth = 1.3 * px; ctx.setLineDash([2.5 * px, 2.5 * px]);
+        ctx.beginPath(); ctx.moveTo(...r.ghost); ctx.lineTo(...m.pos); ctx.stroke(); ctx.restore();
+        disc(ctx, r.ghost, 1.3, null, css('--memory'), 1.6 * px, 1, [2.5 * px, 2 * px]);
+      }
+      if (r.rec || r.gain == null) continue;
+      const show = showAll || r.top || S.hover === m.id; if (!show) continue;
+      const faded = S.hover != null && S.hover !== m.id;
+      ctx.globalAlpha = faded ? 0.25 : 1;
+      arrow(ctx, P0, m.pos, kindColour(r.kind), r.kind === 'good' ? 3 : 2, r.kind === 'risky' ? [5, 3] : r.kind === 'worse' ? [1.5, 3] : null, px);
+      ctx.globalAlpha = 1;
+    }
+    const rec = rows.find(r => r.rec), rp = rec ? sc0.mates.find(m => m.id === rec.id)?.pos : (S.view === 'freeze' ? fromSb(it.fp.E[0], it.fp.E[1]) : null);
+    if (rp) arrow(ctx, P0, rp, css('--fg'), 3, null, px);
+  }
+  // what-if paths
+  if (S.sim) {
+    S.sim.steps.forEach((st, k) => {
+      ctx.save(); ctx.globalAlpha = 0.9; arrow(ctx, st.from, st.to, k === 0 ? css('--good') : css('--memory'), 3, [6, 3], px); ctx.restore();
+      if (st.cut) { const c = st.to, s = 1.6; ctx.save(); ctx.strokeStyle = css('--cut'); ctx.lineWidth = 3 * px;
+        ctx.beginPath(); ctx.moveTo(c[0] - s, c[1] - s); ctx.lineTo(c[0] + s, c[1] + s); ctx.moveTo(c[0] + s, c[1] - s); ctx.lineTo(c[0] - s, c[1] + s); ctx.stroke(); ctx.restore(); }
+    });
+  }
+  // players
+  const chase = chaserPositions();
+  for (const o of sc.opps) {
+    const c = chase.get(o.id), pos = c || o.pos;
+    if (c) disc(ctx, pos, 2.6, null, css('--cut'), 2 * px);   // ring the defender who goes for the ball
+    disc(ctx, pos, 1.35, css('--opp'), null, 0, o.est && !c ? 0.45 : 1); if (o.j) text(ctx, String(o.j), pos, px, css('--opp-ink'), 9);
+  }
+  for (const m of sc.mates) {
+    const r = byId.get(m.id), out = (atPass || S.sim) && r && !r.inView && !r.rec;
+    const alpha = m.est ? 0.45 : 1;
+    disc(ctx, m.pos, 1.5, out ? css('--pitch') : css('--team'), css('--team'), 2 * px, alpha);
+    if (m.id === passerId) disc(ctx, m.pos, 2.3, null, css('--team'), 1.6 * px, alpha);
+    if (r?.expert && atPass) disc(ctx, m.pos, 2.7, null, css('--risky'), 2 * px);
+    if (S.sim && S.sim.steps.some(st => st.id === m.id)) disc(ctx, m.pos, 2.7, null, css('--good'), 2.2 * px);
+    if (S.hover === m.id) disc(ctx, m.pos, 3, null, css('--good'), 2 * px);
+    const lab = m.j ?? r?.rank; if (lab != null) text(ctx, String(lab), m.pos, px, out ? css('--team') : css('--team-ink'), 9.5);
+  }
+  // ball
+  let ball = sc.ball;
+  if (S.sim) ball = [...simBall(), 0];
+  if (S.view === 'freeze' && !S.sim) ball = null;
+  if (ball && inPlay(ball[0], ball[1])) { disc(ctx, [ball[0] + ball[2] * 0.15, ball[1] + ball[2] * 0.15], 0.75, 'rgba(0,0,0,0.25)'); disc(ctx, ball, 0.8 + Math.min(ball[2], 6) * 0.06, css('--ball'), '#1A1A1A', 1 * px); }
+  renderLegend(); updateTime();
+}
+function renderLegend() {
+  const L = [
+    `<span><i class="sw" style="background:var(--team)"></i>in view</span>`,
+    `<span><i class="sw" style="border:2px solid var(--team)"></i>out of view</span>`,
+    `<span><i class="sw" style="background:var(--opp)"></i>opponent</span>`,
+    `<span><i class="ln" style="border-color:var(--fg)"></i>pass played</span>`,
+    `<span><i class="ln" style="border-color:var(--good)"></i>better and realistic</span>`,
+    `<span><i class="ln" style="border-color:var(--risky);border-top-style:dashed"></i>better, but with a catch</span>`,
+    `<span><i class="ln" style="border-color:var(--worse);border-top-style:dotted"></i>worse</span>`];
+  if (S.view === 'track') L.push(`<span><i class="sw" style="border:2px dashed var(--memory)"></i>where he was last seen</span>`, `<span><i class="sw" style="border:2px solid var(--risky)"></i>expert pick</span>`);
+  else L.push(`<span><i class="sw" style="background:var(--area);border:1px solid var(--line);border-radius:2px"></i>what the camera saw</span>`);
+  $('legend').innerHTML = L.join('');
+}
+function updateTime() {
+  const tp = S.cur?.tp;
+  if (S.sim) { $('time').textContent = `what-if +${S.sim.clock.toFixed(1)} s`; return; }
+  if (S.view !== 'track' || !tp || !S.bin) { $('time').textContent = 'moment of the pass'; return; }
+  const [a, b] = win(), rel = (S.tau - tp.t) / HZ;
+  $('time').textContent = `${rel >= 0 ? '+' : '−'}${Math.abs(rel).toFixed(1)} s · ${fmtClock(tp.clk + rel)}`;
+  $('scrub').value = Math.round(1000 * (S.tau - a) / Math.max(1e-6, b - a));
+}
+
+init();
+})();
+</script>
+
+</body>
+</html>
