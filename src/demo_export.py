@@ -93,7 +93,7 @@ def load_shared():
     cands = pd.read_pickle(f'{RESULTS}/candidates_full.pkl')
     reach = pd.read_pickle(f'{RESULTS}/rq3_reach_teammates.pkl').set_index('cand_index')['arr_true_v12.5']
     c = cands.loc[tm['cand_index'].astype(int), ['candidate_value', 'real_value', 'xp_value', 'offside',
-                                                    'forward_progressive', 'legitimate_forward_progressive', 'visible']]
+                                                    'maximal_vaep', 'legitimate_maximal_vaep', 'visible']]
     c.index = pd.MultiIndex.from_arrays([tm['pff_possession_event_id'].to_numpy(), tm['pff_player_id'].astype(int).to_numpy()])
     c['arrive'] = reach.reindex(tm['cand_index'].to_numpy()).to_numpy()
     S['cf'] = c[~c.index.duplicated()]
@@ -154,8 +154,8 @@ def write_passes(gid, arr, S):
                       None if cf is None else r3(cf['candidate_value'], 4),
                       None if cf is None else r3(cf['xp_value']),
                       None if cf is None else b(cf['offside']),
-                      None if cf is None else b(cf['forward_progressive']),
-                      None if cf is None else b(cf['legitimate_forward_progressive']),
+                      None if cf is None else b(cf['maximal_vaep']),
+                      None if cf is None else b(cf['legitimate_maximal_vaep']),
                       None if cf is None else b(cf['arrive']),
                       None if cf is None else b(cf['visible'])])
         rec['m'] = m

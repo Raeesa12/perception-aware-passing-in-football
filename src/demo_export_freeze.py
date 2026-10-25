@@ -87,8 +87,8 @@ def main():
                 mm = mem.loc[[(eid, round(t['cand_x'], 2), round(t['cand_y'], 2))]].iloc[0] \
                     if (eid, round(t['cand_x'], 2), round(t['cand_y'], 2)) in mem.index else None
                 mates.append([r(t['cand_x']), r(t['cand_y']), b(t['visible']), r(t['candidate_value'], 4),
-                              r(t['xp_value'], 3), b(t['offside']), b(t['forward_progressive']),
-                              b(t['legitimate_forward_progressive']),
+                              r(t['xp_value'], 3), b(t['offside']), b(t['maximal_vaep']),
+                              b(t['legitimate_maximal_vaep']),
                               None if mm is None else r(mm['err_lstm_m'], 2),
                               None if mm is None else int(mm['n_hist']), 1 if i == rec_i else 0])
             f = fr_g.get(eid)
