@@ -132,6 +132,7 @@ canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius:
 .whatif.cut { border-color: var(--cut); background: var(--risky-soft); }
 .whatif h4 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 18px; }
 .whatif p { margin: 0; }
+.whatif p.note { font-size: 13px; color: var(--muted); }
 .compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
 .metric { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; display: grid; gap: 2px; }
 .metric .k { font-size: 12px; color: var(--muted); }
@@ -499,7 +500,7 @@ function scene(tau) {
     const fp = it.fp;
     fp.m.forEach((m, k) => out.mates.push({ id: 'f' + k, pos: fromSb(m[0], m[1]), vel: [0, 0] }));
     out.mates.push({ id: 'passer', pos: fromSb(fp.P[0], fp.P[1]), vel: [0, 0] });
-    fp.x.forEach(o => out.opps.push({ pos: fromSb(o[0], o[1]), vel: [0, 0], gk: o[2] === 1 }));
+    fp.x.forEach((o, k) => out.opps.push({ id: 'o' + k, pos: fromSb(o[0], o[1]), vel: [0, 0], gk: o[2] === 1 }));
   }
   return out;
 }
@@ -591,7 +592,12 @@ function interception(from, to, opps) {
   const L = hyp(from, to); if (L < 1) return null;
   for (let s = 2; s <= L; s += 1) {
     const pt = [from[0] + (to[0] - from[0]) * s / L, from[1] + (to[1] - from[1]) * s / L];
-    for (const o of opps) if (reachTime(o, pt) < s / BALL) return { pt, s, by: o };
+    for (const o of opps) if (reachTime(o, pt) < s / BALL) {
+      // how comfortably could he do it? the most time he has to spare anywhere along the rest of the ball's path
+      let spare = 0;
+      for (let u = s; u <= L; u += 1) { const q = [from[0] + (to[0] - from[0]) * u / L, from[1] + (to[1] - from[1]) * u / L]; spare = Math.max(spare, u / BALL - reachTime(o, q)); }
+      return { pt, s, by: o, spare };
+    }
   }
   return null;
 }
@@ -605,7 +611,30 @@ function planPass(from, t0, id) {
   } else dt = hyp(from, target) / BALL;
   dt = hyp(from, target) / BALL;
   const opps = scene(t0).opps; const cut = interception(from, target, opps);
-  return { from, to: cut ? cut.pt : target, aim: target, t0, dur: (cut ? cut.s : hyp(from, target)) / BALL, id, cut };
+  // the defender who goes for the ball: the one who cuts it out, or else the one who gets closest to the receiving spot
+  let chaser = null;
+  if (cut) chaser = { o: cut.by, meet: cut.pt, t: reachTime(cut.by, cut.pt) };
+  else for (const o of opps) { if (o.gk) continue; const t = reachTime(o, target); if (!chaser || t < chaser.t) chaser = { o, meet: target, t }; }
+  if (chaser) chaser = { id: chaser.o.id, p0: chaser.o.pos, v: chaser.o.vel, meet: chaser.meet, t: chaser.t, j: chaser.o.j };
+  return { from, to: cut ? cut.pt : target, aim: target, t0, dur: (cut ? cut.s : hyp(from, target)) / BALL, id, cut, chaser };
+}
+// where a chasing defender is, t seconds after the pass: keeps his momentum for the reaction time, then runs straight at the meeting point at top speed
+function chaserPos(c, t) {
+  const q = [c.p0[0] + c.v[0] * REACT, c.p0[1] + c.v[1] * REACT];
+  if (t <= REACT) return [c.p0[0] + c.v[0] * t, c.p0[1] + c.v[1] * t];
+  const d = hyp(q, c.meet), run = (t - REACT) * VMAX;
+  if (run >= d) return c.meet.slice();
+  return [q[0] + (c.meet[0] - q[0]) * run / d, q[1] + (c.meet[1] - q[1]) * run / d];
+}
+// positions of chasing defenders at the current what-if clock (later steps take over from earlier ones)
+function chaserPositions() {
+  const out = new Map(); if (!S.sim) return out; let start = 0;
+  for (const st of S.sim.steps) {
+    const t = S.sim.clock - start; if (t < 0) break;
+    if (st.chaser) out.set(st.chaser.id, chaserPos(st.chaser, t));
+    start += st.dur + 0.4;
+  }
+  return out;
 }
 function runSim(id) {
   stop(); const t0 = passTime(); S.tau = t0;
@@ -667,9 +696,17 @@ function showWhatIf() {
   let h = `<h4>What if the ball had gone to ${esc(name1)}?</h4>`;
   if (s1.cut) {
     const by = s1.cut.by; const who = by.j ? `#${by.j}` : 'a defender';
-    h += `<p>The pass would probably have been cut out by ${who} after ${Math.round(s1.cut.s)} metres: he could reach the ball's path before it got there. A higher-value pass is only better if it arrives.</p>`;
+    const close = s1.cut.spare < 0.3;
+    h += close
+      ? `<p>It's a close call: ${who} (red ring) could only just reach the ball's path, after ${Math.round(s1.cut.s)} metres, with at most ${s1.cut.spare.toFixed(1)} s to spare. A slightly quicker pass, or a slower defender, and it gets through. Watch him: he gets there at the same moment as the ball.</p>`
+      : `<p>The pass would probably have been cut out by ${who} after ${Math.round(s1.cut.s)} metres. Watch him (red ring): if he goes for the ball, he can reach its path with up to ${s1.cut.spare.toFixed(1)} s to spare. A higher-value pass is only better if it arrives.</p>`;
+    h +=
+      `<p class="note">In the real match he didn't go for it, because the pass was never played. This assumes he reacts after ${REACT} s and sprints at up to ${VMAX} m/s, so it shows what a quick defender could do.</p>`;
   } else {
+    const ch = s1.chaser, chWho = ch ? (ch.j ? `#${ch.j}` : 'the nearest defender') : null;
     h += `<p>The ball reaches him in ${s1.dur.toFixed(1)} s with the nearest opponent ${nearest(s1.aim, opps1).toFixed(0)} m away.` +
+      (ch ? (ch.t > s1.dur ? ` Even if ${chWho} (red ring) sprints for it straight away, he needs ${ch.t.toFixed(1)} s, so he arrives too late.`
+                           : ` ${chWho} (red ring) would arrive at about the same moment, so it is tight.`) : '') +
       (xt(...s1.aim) >= 0.05 ? ' He would be in a shooting position.' : '') +
       (s2 ? ` From there, his most dangerous next pass is to ${esc(sim.nameOf(s2.id))}, which no defender could cut out.` : (xt(...s1.aim) >= 0.05 ? '' : ' From there, no safe pass would take the ball into a more dangerous area.')) + '</p>';
   }
@@ -829,7 +866,12 @@ function draw() {
     });
   }
   // players
-  for (const o of sc.opps) { disc(ctx, o.pos, 1.35, css('--opp'), null, 0, o.est ? 0.45 : 1); if (o.j) text(ctx, String(o.j), o.pos, px, css('--opp-ink'), 9); }
+  const chase = chaserPositions();
+  for (const o of sc.opps) {
+    const c = chase.get(o.id), pos = c || o.pos;
+    if (c) disc(ctx, pos, 2.6, null, css('--cut'), 2 * px);   // ring the defender who goes for the ball
+    disc(ctx, pos, 1.35, css('--opp'), null, 0, o.est && !c ? 0.45 : 1); if (o.j) text(ctx, String(o.j), pos, px, css('--opp-ink'), 9);
+  }
   for (const m of sc.mates) {
     const r = byId.get(m.id), out = (atPass || S.sim) && r && !r.inView && !r.rec;
     const alpha = m.est ? 0.45 : 1;
