@@ -525,7 +525,8 @@ def pass_context(frames, f0, home_ball, lag=6, fps=29.97, max_speed=12.0):
 
 def time_to_reach(pos, vel, targets, reaction=0.7, vmax=7.0):
     """
-    Simple player motion model (as in Spearman et al., 2017): the player keeps
+    Simple player motion model (a simplified form of the time-to-intercept model
+    of Spearman et al., 2017): the player keeps
     their current velocity during a reaction time, then runs straight to the
     target at vmax. pos, vel: (n, 2); targets: (m, 2). Returns (n, m) seconds.
     """

@@ -8,7 +8,8 @@ passer to a target point "arrives" when
      ball does (pff.check_pass, path_margin > 0), and
   2. the intended teammate can reach the target before any defender can.
 
-Player motion follows the simple model of Spearman et al. (2017): keep the
+Player motion uses a simplified form of the time-to-intercept model of
+Spearman et al. (2017): keep the
 current velocity for a reaction time, then run straight at a maximum speed.
 The ball travels at a constant speed v.
 

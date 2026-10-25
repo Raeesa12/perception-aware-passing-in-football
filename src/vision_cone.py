@@ -2,8 +2,14 @@
 Layer 1: Geometric Vision-Cone Filter
 
 Approximates a player's feasible visual field at the moment of a pass using
-a 120-degree cone (Arbues-Sanguesa et al. 2020), and classifies each teammate
-in the StatsBomb 360 freeze frame as visible or invisible relative to that cone.
+a 120-degree cone, and classifies each teammate in the StatsBomb 360 freeze
+frame as visible or invisible relative to that cone.
+
+The idea that body orientation limits which passes are feasible comes from
+Arbues-Sanguesa et al. (2020), who restrict the passer to a +-30 degree wedge
+around their orientation. The 120-degree width is a modelling choice for what
+the passer can see, which is wider than where they can play the ball; results
+for cones of 90 to 180 degrees are in 14_layer3_pff_facing_check.ipynb.
 
 Note: StatsBomb open data does not include a body-orientation attribute.
 As a substitute, orientation is approximated from the player's movement vector
