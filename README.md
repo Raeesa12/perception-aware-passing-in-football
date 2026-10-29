@@ -3,6 +3,7 @@
 Honours research project, School of Computer Science and Applied Mathematics, University of the Witwatersrand.
 
 **Author:** Raeesa Lorgat
+
 **Supervisors:** Dr Pravesh Ranchod and Dr Branden Ingram
 
 Counterfactual passing models judge a pass by comparing it with every other pass the player could have made. Almost all of them assume the passer can see every teammate at once. This project replaces that bird's-eye view with a movement-based vision cone and a model of short-term memory, and asks how much the verdict on a pass depends on which options the player is assumed to have had.
