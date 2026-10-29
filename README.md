@@ -5,7 +5,7 @@ Honours research project, School of Computer Science and Applied Mathematics, Un
 **Author:** Raeesa Lorgat
 **Supervisors:** Dr Pravesh Ranchod and Dr Branden Ingram
 
-Counterfactual passing models judge a pass by comparing it with every other pass the player could have made. Almost all of them assume the passer can see every teammate at once. This project replaces that bird's-eye view with what the passer could realistically see and remember, and asks how much that changes the verdict on their decisions.
+Counterfactual passing models judge a pass by comparing it with every other pass the player could have made. Almost all of them assume the passer can see every teammate at once. This project replaces that bird's-eye view with a movement-based vision cone and a model of short-term memory, and asks how much the verdict on a pass depends on which options the player is assumed to have had.
 
 **Live demo:** [What Else Was On, an interactive pass explorer](https://claude.ai/artifact/Kam5beB97gupLUeEmWQkUX). Pick any of the 98,652 analysed passes, see which teammates were in view, and play out what might have happened if the ball had gone somewhere else.
 
@@ -25,7 +25,7 @@ The framework has three layers, each answering one research question.
 
 | | Result |
 |---|---|
-| **RQ1** | Restricting to the vision cone changes the best option in **57.9%** of passes (paired Cohen's d = 0.28). |
+| **RQ1** | Restricting to the vision cone changes the best option in **57.9%** of passes (paired Cohen's d = 0.28). Keeping the same number of teammates at random, or pointing the cone in a random direction, changes it at least as often (58.5% and 59.4%), so the effect comes from how many options are kept, not the cone's direction. |
 | **RQ2** | A better visible, onside, completable option is bypassed in **38.9%** of passes (95% CI 38.1 to 39.8). An omniscient model would report 74.2%. |
 | RQ2 with risk | Giving every option an expected value lowers the bypass rate to **34.7%**. |
 | **RQ3** | With PFF tracking, the LSTM locates unseen teammates with a mean error of **3.03 m**, 1.03 m better than assuming they have not moved. **42.3%** of blind passes go to a receiver the passer could have located to within 4.66 m from memory. |
@@ -34,12 +34,12 @@ All results come from 166 international matches (Euro 2020, Euro 2024 and the 20
 
 ## Terms used in the code and notebooks
 
-- **Visible / invisible:** a teammate inside or outside the passer's 120 degree vision cone.
+- **Visible / invisible:** a teammate inside or outside the passer's 120 degree vision cone. The cone is a proxy built from the passer's movement into the pass, not a measure of gaze or perception.
 - **Maximal-VAEP option:** a teammate whose zone has higher expected threat than the passer's zone, and to whom a pass is worth more (VAEP) than the pass actually made. Not called a "forward" option because about 10% of them are level with or behind the passer.
 - **Legitimate option:** a maximal-VAEP option that is also visible, onside and has a completion probability of at least 0.05.
 - **Bypass rate:** the share of passes with at least one legitimate option that was not taken (the RQ2 measure).
 - **Blind pass:** a completed pass to a receiver outside the passer's cone.
-- **Memory-feasible:** the LSTM, using only what the passer saw, places the teammate within tau = 4.66 m (half the median gap between neighbouring defenders in a back line).
+- **Memory-feasible:** the LSTM, using only the moments the teammate was inside the passer's cone, places the teammate within tau = 4.66 m (half the median gap between neighbouring defenders in a back line).
 
 ## Repository structure
 
@@ -76,11 +76,12 @@ Run them in order. Each notebook starts with a short explanation and ends with a
 | 08 | `08_layer3_pff_link` | Linking PFF tracking to the StatsBomb passes |
 | 09 | `09_layer3_pff_lstm_check` | The StatsBomb LSTM judged against PFF positions |
 | 10 | `10_layer3_pff_reachability` | Would a pass to a given spot actually arrive? |
-| 11 | `11_layer3_pff_rq3_memory` | RQ3 part 1: what the passer saw in the 5 s before each pass |
+| 11 | `11_layer3_pff_rq3_memory` | RQ3 part 1: which teammates were inside the passer's cone in the 5 s before each pass |
 | 12 | `12_layer3_pff_rq3_lstm` | RQ3 part 2: the LSTM spatial memory model |
 | 13 | `13_layer3_pff_rq3_answer` | RQ3 part 3: how many blind passes are memory-feasible |
 | 14 | `14_layer3_pff_facing_check` | Checking the facing direction and cone width behind RQ1 and RQ2 |
 | 15 | `15_layer3_pff_better_options` | RQ2 against PFF analysts' better-option labels, and the two poster scenarios |
+| 16 | `16_rq1_random_removal_check` | RQ1 against two random baselines: teammates kept at random, and the cone pointed in a random direction |
 
 Figures are saved to `data/results/figures/`, and intermediate results to `data/results/`.
 

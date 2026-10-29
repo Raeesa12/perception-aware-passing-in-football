@@ -186,7 +186,7 @@ tbody tr:hover td { background: var(--chip); }
     <svg class="heroball" aria-hidden="true"><use href="#ball"/></svg>
     <h1><svg class="titleball" aria-hidden="true"><use href="#ball"/></svg>Counterfactual Passes: <span class="alt">What Else Was On</span></h1>
     <p class="pun">Hindsight is 20/20. The passer only had 120&deg;.</p>
-    <p class="sub">Pick a pass from a real international match. See which teammates the passer could see, which of them were better options, and play out what might have happened if the ball had gone there instead.</p>
+    <p class="sub">Pick a pass from a real international match. See which teammates were inside the passer's vision cone, which of them were better options, and play out what might have happened if the ball had gone there instead.</p>
   </header>
 
   <div class="grid">
@@ -256,7 +256,7 @@ tbody tr:hover td { background: var(--chip); }
       <details class="card howto">
         <summary>How to read this</summary>
         <ul>
-          <li><b>The shaded wedge</b> is what the passer could see: 120 degrees around the direction he was moving.</li>
+          <li><b>The shaded wedge</b> is the passer's vision cone: 120 degrees around the direction he was moving into the pass. It is a stand-in for what he could see, not a measure of where he was looking.</li>
           <li><b>Value</b> says how much a pass to each teammate would raise his team's chances of scoring (and lower their chances of conceding) over the next few actions, compared with the pass he actually played. It comes from a model trained on thousands of real actions (VAEP), shown here multiplied by 100.</li>
           <li><b>Green</b> options were better, in view, onside and realistic to complete. <b>Purple</b> options were worth more but had a catch: out of view, offside, or a low chance of completing. <b>Grey</b> options were worth less than the pass played.</li>
           <li><b>Teal ghosts</b> show where the passer last saw a teammate who was out of view at the moment of the pass, as his memory would place him.</li>
