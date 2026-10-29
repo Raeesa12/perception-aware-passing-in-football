@@ -29,7 +29,7 @@ The framework has three layers, each answering one research question.
 | **RQ1** | Restricting to the vision cone changes the best option in **57.9%** of passes (paired Cohen's d = 0.28). Keeping the same number of teammates at random, or pointing the cone in a random direction, changes it at least as often (58.5% and 59.4%), so the effect comes from how many options are kept, not the cone's direction. |
 | **RQ2** | A better visible, onside, completable option is bypassed in **38.9%** of passes (95% CI 38.1 to 39.8). An omniscient model would report 74.2%. |
 | **RQ2 with risk** | Giving every option an expected value lowers the bypass rate to **34.7%**. |
-| **RQ3** | With PFF tracking, the LSTM locates unseen teammates with a mean error of **3.03 m**, 1.03 m better than assuming they have not moved. **42.3%** of blind passes go to a receiver the passer could have located to within 4.66 m from memory. |
+| **RQ3** | With PFF tracking, the LSTM locates teammates outside the cone with a mean error of **3.03 m**, 1.03 m better than assuming they have not moved. **42.3%** of blind passes go to a receiver the passer could have located to within 4.66 m from memory. |
 
 All results come from 166 international matches (Euro 2020, Euro 2024 and the 2022 World Cup), with PFF tracking for the 64 World Cup matches.
 
